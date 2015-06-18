@@ -95,6 +95,18 @@ class Debugger extends Component {
     actions.revert(dispatch.id)
   }
 
+  view(dispatch) {
+    if (this.props.inspector) {
+      // XXX fire an action!
+    } else {
+      console.log({
+        action: dispatch.action,
+        data: dispatch.data,
+        details: dispatch.details,
+      })
+    }
+  }
+
   render() {
     // XXX actually the two column approach may be better so that you can inspect one without the other.
     return (
@@ -106,7 +118,7 @@ class Debugger extends Component {
                 action: {dispatch.action.toString()}
               </div>
               <div>
-                data: <Inspector data={dispatch.data || {}} />
+                <a href="#" onClick={() => this.view(dispatch)}>View Data</a>
               </div>
               <div>
                 <a href="#" onClick={() => this.revert(dispatch)}>Revert</a>
@@ -116,6 +128,9 @@ class Debugger extends Component {
         })}
       </ul>
     )
+    // XXX render the inspector with the selected data if we have one
+    // make sure each panel is draggable and resizable or whatever
+    //    data: <Inspector data={dispatch.data || {}} />
   }
 }
 
