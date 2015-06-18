@@ -7,19 +7,26 @@ import Inspector from './Inspector'
 
 const alt = new Alt()
 
-const actions = alt.generateActions('addDispatch', 'setAlt', 'revert')
+const actions = alt.generateActions(
+  'addDispatch',
+  'selectDispatch',
+  'setAlt',
+  'revert'
+)
 
 const DispatcherStore = alt.createStore(class {
 //  static displayName = 'DispatcherStore'
 
   constructor() {
     this.dispatches = []
+    this.selectedDispatch = {}
     this.snapshots = {}
     this.alt = null
 
     this.bindActions(actions)
     this.exportPublicMethods({
-      getDispatches: () => this.dispatches
+      getDispatches: () => this.dispatches,
+      getSelected: () => this.selectedDispatch,
     })
   }
 
@@ -32,6 +39,10 @@ const DispatcherStore = alt.createStore(class {
     // send the state in yourself by capturing it from each store
     // and reducing it
     if (this.alt) this.snapshots[id] = this.alt.takeSnapshot()
+  }
+
+  selectDispatch(dispatch) {
+    this.selectedDispatch = dispatch
   }
 
   setAlt(alt) {
@@ -68,16 +79,6 @@ const DispatcherStore = alt.createStore(class {
 // we can also have a DebuggingTools which has flush, bootstrap, etc
 // and a main Debugger which gives us access to everything
 class Debugger extends Component {
-  static getPropsFromStores() {
-    return {
-      dispatches: DispatcherStore.getDispatches()
-    }
-  }
-
-  static getStores() {
-    return [DispatcherStore]
-  }
-
   constructor(props) {
     super(props)
   }
@@ -96,42 +97,61 @@ class Debugger extends Component {
   }
 
   view(dispatch) {
+    const payload = {
+      action: dispatch.action,
+      data: dispatch.data,
+      details: dispatch.details,
+    }
+
     if (this.props.inspector) {
-      // XXX fire an action!
+      actions.selectDispatch(payload)
     } else {
-      console.log({
-        action: dispatch.action,
-        data: dispatch.data,
-        details: dispatch.details,
-      })
+      console.log(payload)
     }
   }
 
+  renderInspectorWindow() {
+    return this.props.inspector
+      ? <this.props.inspector data={this.props.selectedDispatch} />
+      : null
+  }
+
   render() {
-    // XXX actually the two column approach may be better so that you can inspect one without the other.
-    return (
-      <ul>
-        {this.props.dispatches.map((dispatch) => {
-          return (
-            <li key={dispatch.id}>
-              <div>
-                action: {dispatch.action.toString()}
-              </div>
-              <div>
-                <a href="#" onClick={() => this.view(dispatch)}>View Data</a>
-              </div>
-              <div>
-                <a href="#" onClick={() => this.revert(dispatch)}>Revert</a>
-              </div>
-            </li>
-          )
-        })}
-      </ul>
-    )
-    // XXX render the inspector with the selected data if we have one
     // make sure each panel is draggable and resizable or whatever
-    //    data: <Inspector data={dispatch.data || {}} />
+    return (
+      <div>
+        <ul>
+          {this.props.dispatches.map((dispatch) => {
+            return (
+              <li key={dispatch.id}>
+                <div>
+                  action: {dispatch.action.toString()}
+                </div>
+                <div>
+                  <a href="#" onClick={() => this.view(dispatch)}>View Data</a>
+                </div>
+                <div>
+                  <a href="#" onClick={() => this.revert(dispatch)}>Revert</a>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+        {this.renderInspectorWindow()}
+      </div>
+    )
   }
 }
 
-export default connectToStores(Debugger)
+export default connectToStores({
+  getPropsFromStores() {
+    return {
+      dispatches: DispatcherStore.getDispatches(),
+      selectedDispatch: DispatcherStore.getSelected(),
+    }
+  },
+
+  getStores() {
+    return [DispatcherStore]
+  }
+}, Debugger)
