@@ -128,10 +128,10 @@ class Debugger extends Component {
                   action: {dispatch.action.toString()}
                 </div>
                 <div>
-                  <a href="#" onClick={() => this.view(dispatch)}>View Data</a>
+                  <span onClick={() => this.view(dispatch)}>View Data</span>
                 </div>
                 <div>
-                  <a href="#" onClick={() => this.revert(dispatch)}>Revert</a>
+                  <span onClick={() => this.revert(dispatch)}>Revert</span>
                 </div>
               </li>
             )
