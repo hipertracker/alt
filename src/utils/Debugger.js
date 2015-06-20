@@ -104,6 +104,11 @@ class FixedDataTableCSS extends Component {
 // we can also have a StoreDebugger
 // we can also have a DebuggingTools which has flush, bootstrap, etc
 // and a main Debugger which gives us access to everything
+//
+//
+//  XXX add ability to turn off snapshots/history/revert
+//  add ability to record dispatches
+//  add ability to turn off dispatch logging
 class Debugger extends Component {
   constructor(props) {
     super(props)
