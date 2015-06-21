@@ -13,7 +13,9 @@ const actions = alt.generateActions(
   'revert',
   'selectDispatch',
   'setAlt',
-  'toggleLogDispatches'
+  'toggleLogDispatches',
+  'toggleRecording',
+  'toggleRecordDispatch'
 )
 
 const DispatcherStore = alt.createStore(class {
@@ -24,6 +26,7 @@ const DispatcherStore = alt.createStore(class {
       return {
         dispatches: state.dispatches,
         selectedDispatch: state.selectedDispatch,
+        isRecording: state.isRecording,
         logDispatches: state.logDispatches,
       }
     }
@@ -34,7 +37,9 @@ const DispatcherStore = alt.createStore(class {
     this.selectedDispatch = {}
     this.snapshots = {}
     this.alt = null
+    this.recorder = null
     this.stores = []
+    this.isRecording = false
     this.logDispatches = true
 
     this.bindActions(actions)
@@ -45,6 +50,8 @@ const DispatcherStore = alt.createStore(class {
 
     const id = Math.random().toString(16).substr(2, 7)
     payload.id = id
+
+    if (this.isRecording) payload.recorded = true
 
     const dispatchedStores = this.stores
       .filter((x) => x.boundListeners.indexOf(payload.details.id) > -1)
@@ -69,6 +76,7 @@ const DispatcherStore = alt.createStore(class {
 
   setAlt(alt) {
     this.alt = alt
+    this.recorder = new DispatcherRecorder(alt)
     this.stores = Object.keys(this.alt.stores).map((name) => {
       return this.alt.stores[name]
     })
@@ -76,6 +84,22 @@ const DispatcherStore = alt.createStore(class {
 
   toggleLogDispatches() {
     this.logDispatches = !this.logDispatches
+  }
+
+  toggleRecording() {
+    if (this.isRecording) {
+      this.recorder.stop()
+    } else {
+      this.recorder.record()
+    }
+
+    this.isRecording = !this.isRecording
+  }
+
+  toggleRecordDispatch(id) {
+    // XXX make sure to remove .recorded from the payload in this store.
+    // and make sure to remove it from DispatcherRecorded, or add it!
+
   }
 })
 
@@ -128,6 +152,7 @@ class Debugger extends Component {
     super(props)
 
     this.renderActions = this.renderActions.bind(this)
+    this.renderIcon = this.renderIcon.bind(this)
   }
 
   componentDidMount() {
@@ -139,12 +164,21 @@ class Debugger extends Component {
     actions.setAlt(this.props.alt)
   }
 
+  doLogDispatch(ev) {
+    const data = ev.target.dataset
+    actions.toggleRecordDispatch(data.payloadId)
+  }
+
   revert(dispatch) {
     actions.revert(dispatch.id)
   }
 
   toggleLogDispatches() {
     actions.toggleLogDispatches()
+  }
+
+  toggleRecording() {
+    actions.toggleRecording()
   }
 
   view(dispatch) {
@@ -162,16 +196,6 @@ class Debugger extends Component {
     }
   }
 
-  renderInspectorWindow() {
-    return this.props.inspector
-      ? <this.props.inspector data={this.props.selectedDispatch} />
-      : null
-  }
-
-  renderName(action) {
-    return <span>{action.name}</span>
-  }
-
   renderActions(_, i, dispatch) {
     return (
       <div>
@@ -179,7 +203,7 @@ class Debugger extends Component {
           onClick={() => this.view(dispatch)}
           style={{ cursor: 'pointer' }}
         >
-          View Data
+          View
         </span>
         <span> | </span>
         <span
@@ -192,35 +216,70 @@ class Debugger extends Component {
     )
   }
 
+  renderIcon(isRecorded, _, dispatch) {
+    return (
+      <input
+        checked={isRecorded}
+        data-payload-id={dispatch.id}
+        onChange={this.doLogDispatch}
+        type="checkbox"
+      />
+    )
+  }
+
+  renderInspectorWindow() {
+    return this.props.inspector
+      ? <this.props.inspector data={this.props.selectedDispatch} />
+      : null
+  }
+
+  renderName(action) {
+    return <span>{action.name}</span>
+  }
+
   render() {
     // make sure each panel is draggable and resizable or whatever
     return (
       <div>
-        <input
-          checked={this.props.logDispatches}
-          onChange={this.toggleLogDispatches}
-          type="checkbox"
-        />
+        <label>
+          <input
+            checked={this.props.logDispatches}
+            onChange={this.toggleLogDispatches}
+            type="checkbox"
+          />
+          <span>Log Dispatches</span>
+        </label>
+        <div>
+          <span onClick={this.toggleRecording}>
+            {this.props.isRecording ? 'Stop' : 'Record'}
+          </span>
+        </div>
         <FixedDataTableCSS />
         <Table
-          headerHeight={40}
-          height={200}
+          headerHeight={30}
+          height={480}
           rowGetter={(idx) => this.props.dispatches[idx]}
-          rowHeight={35}
+          rowHeight={30}
           rowsCount={this.props.dispatches.length}
-          width={300}
+          width={320}
         >
+          <Column
+            cellRenderer={this.renderIcon}
+            dataKey="recorded"
+            label="*"
+            width={25}
+          />
           <Column
             cellRenderer={this.renderName}
             dataKey="details"
             label="Name"
-            width={150}
+            width={147.5}
           />
           <Column
             cellRenderer={this.renderActions}
             dataKey=""
             label="Tools"
-            width={150}
+            width={147.5}
           />
         </Table>
         {this.renderInspectorWindow()}
