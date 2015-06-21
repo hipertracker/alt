@@ -4,19 +4,30 @@ import Alt from '../'
 import { Column, Table } from 'fixed-data-table'
 import makeFinalStore from './makeFinalStore'
 import connectToStores from './connectToStores'
-import Inspector from './Inspector'
+import DispatcherRecorder from './DispatcherRecorder'
 
 const alt = new Alt()
 
 const actions = alt.generateActions(
   'addDispatch',
+  'revert',
   'selectDispatch',
   'setAlt',
-  'revert'
+  'toggleLogDispatches'
 )
 
 const DispatcherStore = alt.createStore(class {
-//  static displayName = 'DispatcherStore'
+  static displayName = 'DispatcherStore'
+
+  static config = {
+    getState(state) {
+      return {
+        dispatches: state.dispatches,
+        selectedDispatch: state.selectedDispatch,
+        logDispatches: state.logDispatches,
+      }
+    }
+  }
 
   constructor() {
     this.dispatches = []
@@ -24,15 +35,14 @@ const DispatcherStore = alt.createStore(class {
     this.snapshots = {}
     this.alt = null
     this.stores = []
+    this.logDispatches = true
 
     this.bindActions(actions)
-    this.exportPublicMethods({
-      getDispatches: () => this.dispatches,
-      getSelected: () => this.selectedDispatch,
-    })
   }
 
   addDispatch(payload) {
+    if (!this.logDispatches) return false
+
     const id = Math.random().toString(16).substr(2, 7)
     payload.id = id
 
@@ -48,6 +58,11 @@ const DispatcherStore = alt.createStore(class {
     if (this.alt) this.snapshots[id] = this.alt.takeSnapshot()
   }
 
+  revert(id) {
+    const snapshot = this.snapshots[id]
+    if (snapshot) this.alt.bootstrap(snapshot)
+  }
+
   selectDispatch(dispatch) {
     this.selectedDispatch = dispatch
   }
@@ -59,9 +74,8 @@ const DispatcherStore = alt.createStore(class {
     })
   }
 
-  revert(id) {
-    const snapshot = this.snapshots[id]
-    if (snapshot) this.alt.bootstrap(snapshot)
+  toggleLogDispatches() {
+    this.logDispatches = !this.logDispatches
   }
 })
 
@@ -129,6 +143,10 @@ class Debugger extends Component {
     actions.revert(dispatch.id)
   }
 
+  toggleLogDispatches() {
+    actions.toggleLogDispatches()
+  }
+
   view(dispatch) {
     const payload = {
       action: dispatch.action,
@@ -178,6 +196,11 @@ class Debugger extends Component {
     // make sure each panel is draggable and resizable or whatever
     return (
       <div>
+        <input
+          checked={this.props.logDispatches}
+          onChange={this.toggleLogDispatches}
+          type="checkbox"
+        />
         <FixedDataTableCSS />
         <Table
           headerHeight={40}
@@ -208,10 +231,7 @@ class Debugger extends Component {
 
 export default connectToStores({
   getPropsFromStores() {
-    return {
-      dispatches: DispatcherStore.getDispatches(),
-      selectedDispatch: DispatcherStore.getSelected(),
-    }
+    return DispatcherStore.getState()
   },
 
   getStores() {
