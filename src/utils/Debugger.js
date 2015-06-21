@@ -98,7 +98,10 @@ const DispatcherStore = alt.createStore(class {
 
   toggleRecordDispatch(id) {
     // XXX make sure to remove .recorded from the payload in this store.
-    // and make sure to remove it from DispatcherRecorded, or add it!
+    // and make sure to remove it from DispatcherRecorder, or add it!
+    //
+    // how do I remove it from DispatcherRecorder since I don't have the id?
+    // maybe data equality and if action is the same?
 
   }
 })
