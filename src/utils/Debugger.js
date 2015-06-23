@@ -54,9 +54,6 @@ const DispatcherStore = alt.createStore(class {
   addDispatch(payload) {
     if (!this.logDispatches) return false
 
-    const id = Math.random().toString(16).substr(2, 7)
-    payload.id = id
-
     if (this.isRecording) payload.recorded = true
 
     const dispatchedStores = this.stores
@@ -68,7 +65,7 @@ const DispatcherStore = alt.createStore(class {
 
     this.dispatches.unshift(payload)
 
-    if (this.alt) this.snapshots[id] = this.alt.takeSnapshot()
+    if (this.alt) this.snapshots[payload.id] = this.alt.takeSnapshot()
   }
 
   revert(id) {
@@ -115,10 +112,10 @@ const DispatcherStore = alt.createStore(class {
     const dispatch = this.dispatches[dispatchId]
 
     this.dispatches[dispatchId].recorded = false
+
+    // XXX
     return true
 
-    // XXX this is kinda shitty. I should not rely on `id` instead use action
-    // and data equality...
     if (dispatch.recorded) {
       // remove from the recorder
       const spliceId = this.recorder.events.reduce((splice, event, i) => {
@@ -206,17 +203,10 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
   }
 
   view(dispatch) {
-    const payload = {
-      action: dispatch.action,
-      data: dispatch.data,
-      details: dispatch.details,
-      stores: dispatch.dispatchedStores,
-    }
-
     if (this.props.inspector) {
-      actions.selectDispatch(payload)
+      actions.selectDispatch(dispatch)
     } else {
-      console.log(payload)
+      console.log(dispatch)
     }
   }
 
@@ -247,13 +237,12 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
   }
 
   renderView(a, b, dispatch) {
-    // XXX this is not going to work because selectedDispatch doesn't have an id
     return (
       <span
         onClick={() => this.view(dispatch)}
         style={{ cursor: 'pointer' }}
       >
-        View {this.props.selectedDispatch.id === dispatch.id ? '√' : ''}
+        View {this.props.selectedDispatch === dispatch ? '√' : ''}
       </span>
     )
   }
