@@ -1,5 +1,6 @@
 /*eslint-disable */
 import React from 'react'
+import { DragSource } from 'react-dnd'
 
 const Styles = {
   root: {
@@ -133,7 +134,7 @@ class Data extends React.Component {
   }
 
   render() {
-    return (
+    return this.props.connect(
       <div styles={Styles.root}>
         <Leaf data={this.props.data} hidden={false} level={0} />
       </div>
@@ -141,4 +142,12 @@ class Data extends React.Component {
   }
 }
 
-export default Data
+export default DragSource('InspectorWindow', {
+  beginDrag(props) {
+    return props
+  }
+}, (connect, monitor) => {
+  return {
+    connect: connect.dragSource()
+  }
+})(Data)

@@ -5,6 +5,10 @@ import { Column, Table } from 'fixed-data-table'
 import makeFinalStore from './makeFinalStore'
 import connectToStores from './connectToStores'
 import DispatcherRecorder from './DispatcherRecorder'
+import { DragSource, DragDropContext } from 'react-dnd'
+import HTML5Backend from 'react-dnd/modules/backends/HTML5'
+
+//import DispatcherDebugger from './DispatcherDebugger'
 
 const alt = new Alt()
 
@@ -24,10 +28,11 @@ const DispatcherStore = alt.createStore(class {
   static config = {
     getState(state) {
       return {
+        currentStateId: state.currentStateId,
         dispatches: state.dispatches,
-        selectedDispatch: state.selectedDispatch,
         isRecording: state.isRecording,
         logDispatches: state.logDispatches,
+        selectedDispatch: state.selectedDispatch,
       }
     }
   }
@@ -35,6 +40,7 @@ const DispatcherStore = alt.createStore(class {
   constructor() {
     this.dispatches = []
     this.selectedDispatch = {}
+    this.currentStateId = null
     this.snapshots = {}
     this.alt = null
     this.recorder = null
@@ -67,7 +73,10 @@ const DispatcherStore = alt.createStore(class {
 
   revert(id) {
     const snapshot = this.snapshots[id]
-    if (snapshot) this.alt.bootstrap(snapshot)
+    if (snapshot) {
+      this.currentStateId = id
+      this.alt.bootstrap(snapshot)
+    }
   }
 
   selectDispatch(dispatch) {
@@ -97,12 +106,33 @@ const DispatcherStore = alt.createStore(class {
   }
 
   toggleRecordDispatch(id) {
-    // XXX make sure to remove .recorded from the payload in this store.
-    // and make sure to remove it from DispatcherRecorder, or add it!
-    //
-    // how do I remove it from DispatcherRecorder since I don't have the id?
-    // maybe data equality and if action is the same?
+    const dispatchId = this.dispatches.reduce((x, dispatch, i) => {
+      return dispatch.id === id ? i : x
+    }, null)
 
+    if (!dispatchId) return false
+
+    const dispatch = this.dispatches[dispatchId]
+
+    this.dispatches[dispatchId].recorded = false
+    return true
+
+    // XXX this is kinda shitty. I should not rely on `id` instead use action
+    // and data equality...
+    if (dispatch.recorded) {
+      // remove from the recorder
+      const spliceId = this.recorder.events.reduce((splice, event, i) => {
+        return event.id === id ? i : splice
+      }, null)
+
+      if (spliceId) this.recorder.events.splice(spliceId, 1)
+    } else {
+      // add to the recorder, in the right order too
+      // TODO
+      this.recorder.events.push(dispatch)
+    }
+
+    dispatch.recorded = !dispatch.recorded
   }
 })
 
@@ -141,30 +171,21 @@ class FixedDataTableCSS extends Component {
   }
 }
 
-// XXX this can be the DispatcherDebugger
-// we can also have a StoreDebugger
-// we can also have a DebuggingTools which has flush, bootstrap, etc
-// and a main Debugger which gives us access to everything
-//
-//
-//  XXX add ability to turn off snapshots/history/revert
-//  add ability to record dispatches
-//  add ability to turn off dispatch logging
-class Debugger extends Component {
-  constructor(props) {
-    super(props)
-
-    this.renderActions = this.renderActions.bind(this)
-    this.renderIcon = this.renderIcon.bind(this)
+const DispatcherDebugger = DragSource('DispatcherDebugger', {
+  beginDrag(props) {
+    return props
   }
+}, (connect, monitor) => {
+  return {
+    connect: connect.dragSource()
+  }
+})(class extends Component {
+  constructor() {
+    super()
 
-  componentDidMount() {
-    const finalStore = makeFinalStore(this.props.alt)
-    finalStore.listen((state) => {
-      actions.addDispatch(state.payload)
-    })
-
-    actions.setAlt(this.props.alt)
+    this.renderIcon = this.renderIcon.bind(this)
+    this.renderRevert = this.renderRevert.bind(this)
+    this.renderView = this.renderView.bind(this)
   }
 
   doLogDispatch(ev) {
@@ -199,26 +220,6 @@ class Debugger extends Component {
     }
   }
 
-  renderActions(_, i, dispatch) {
-    return (
-      <div>
-        <span
-          onClick={() => this.view(dispatch)}
-          style={{ cursor: 'pointer' }}
-        >
-          View
-        </span>
-        <span> | </span>
-        <span
-          onClick={() => this.revert(dispatch)}
-          style={{ cursor: 'pointer' }}
-        >
-          Revert
-        </span>
-      </div>
-    )
-  }
-
   renderIcon(isRecorded, _, dispatch) {
     return (
       <input
@@ -230,18 +231,34 @@ class Debugger extends Component {
     )
   }
 
-  renderInspectorWindow() {
-    return this.props.inspector
-      ? <this.props.inspector data={this.props.selectedDispatch} />
-      : null
-  }
-
   renderName(action) {
     return <span>{action.name}</span>
   }
 
+  renderRevert(a, b, dispatch) {
+    return (
+      <span
+        onClick={() => this.revert(dispatch)}
+        style={{ cursor: 'pointer' }}
+      >
+        Revert {this.props.currentStateId === dispatch.id ? '√' : ''}
+      </span>
+    )
+  }
+
+  renderView(a, b, dispatch) {
+    // XXX this is not going to work because selectedDispatch doesn't have an id
+    return (
+      <span
+        onClick={() => this.view(dispatch)}
+        style={{ cursor: 'pointer' }}
+      >
+        View {this.props.selectedDispatch.id === dispatch.id ? '√' : ''}
+      </span>
+    )
+  }
+
   render() {
-    // make sure each panel is draggable and resizable or whatever
     return (
       <div>
         <label>
@@ -257,7 +274,6 @@ class Debugger extends Component {
             {this.props.isRecording ? 'Stop' : 'Record'}
           </span>
         </div>
-        <FixedDataTableCSS />
         <Table
           headerHeight={30}
           height={480}
@@ -276,15 +292,61 @@ class Debugger extends Component {
             cellRenderer={this.renderName}
             dataKey="details"
             label="Name"
-            width={147.5}
+            width={155}
           />
           <Column
-            cellRenderer={this.renderActions}
+            cellRenderer={this.renderView}
+            dataKey="id"
+            label="View"
+            width={70}
+          />
+          <Column
+            cellRenderer={this.renderRevert}
             dataKey=""
-            label="Tools"
-            width={147.5}
+            label="Revert"
+            width={70}
           />
         </Table>
+      </div>
+    )
+  }
+})
+
+// XXX this can be the DispatcherDebugger
+// we can also have a StoreDebugger
+// we can also have a DebuggingTools which has flush, bootstrap, etc
+// and a main Debugger which gives us access to everything
+//
+//
+//  XXX add ability to turn off snapshots/history/revert
+//  add ability to record dispatches
+//  add ability to turn off dispatch logging
+class Debugger extends Component {
+  componentDidMount() {
+    const finalStore = makeFinalStore(this.props.alt)
+    finalStore.listen((state) => {
+      actions.addDispatch(state.payload)
+    })
+
+    actions.setAlt(this.props.alt)
+  }
+
+  renderInspectorWindow() {
+    return this.props.inspector
+      ? <this.props.inspector data={this.props.selectedDispatch} />
+      : null
+  }
+
+  render() {
+    // XXX I think I should connect the inspector window otherwise make it
+    // console.log
+    //
+    // this way we connect DispatcherDebugger to the AltStore so that is the
+    // only thing that re-renders
+    return (
+      <div>
+        <FixedDataTableCSS />
+        <DispatcherDebugger {...this.props} />
         {this.renderInspectorWindow()}
       </div>
     )
@@ -299,4 +361,4 @@ export default connectToStores({
   getStores() {
     return [DispatcherStore]
   }
-}, Debugger)
+}, DragDropContext(HTML5Backend)(Debugger))
