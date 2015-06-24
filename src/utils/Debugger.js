@@ -16,10 +16,13 @@ const alt = new Alt()
 
 const actions = alt.generateActions(
   'addDispatch',
+  'clear',
+  'loadRecording',
+  'replay',
   'revert',
+  'saveRecording',
   'selectDispatch',
   'setAlt',
-  'toggleLogDispatches',
   'toggleRecording',
   'toggleRecordDispatch'
 )
@@ -32,9 +35,7 @@ const DispatcherStore = alt.createStore(class {
       return {
         currentStateId: state.currentStateId,
         dispatches: state.dispatches,
-        hasRecorded: state.recorder && state.recorder.events.length > 0,
         isRecording: state.isRecording,
-        logDispatches: state.logDispatches,
         mtime: state.mtime,
         selectedDispatch: state.selectedDispatch,
       }
@@ -49,8 +50,7 @@ const DispatcherStore = alt.createStore(class {
     this.alt = null
     this.recorder = null
     this.stores = []
-    this.isRecording = false
-    this.logDispatches = true
+    this.isRecording = true
 
     // due to the aggressive nature of FixedDataTable's shouldComponentUpdate
     // and JS objects being references not values we need an mtime applied
@@ -65,9 +65,7 @@ const DispatcherStore = alt.createStore(class {
   }
 
   addDispatch(payload) {
-    if (!this.logDispatches) return false
-
-    payload.recorded = this.isRecording
+    if (!this.isRecording) return false
 
     const dispatchedStores = this.stores
       .filter((x) => x.boundListeners.indexOf(payload.details.id) > -1)
@@ -79,6 +77,22 @@ const DispatcherStore = alt.createStore(class {
     this.dispatches.unshift(payload)
 
     if (this.alt) this.snapshots[payload.id] = this.alt.takeSnapshot()
+    this.currentStateId = payload.id
+  }
+
+  clear() {
+    this.dispatches = []
+    this.selectedDispatch = {}
+    this.currentStateId = null
+    this.snapshots = {}
+    this.recorder.clear()
+  }
+
+  replay() {
+    this.clear()
+
+    // XXX I need to be able to pause and stop replay and shit...
+    setTimeout(() => this.recorder.replay(5))
   }
 
   revert(id) {
@@ -89,6 +103,10 @@ const DispatcherStore = alt.createStore(class {
     }
   }
 
+  saveRecording() {
+    console.log(this.recorder.serializeEvents())
+  }
+
   selectDispatch(dispatch) {
     this.selectedDispatch = dispatch
   }
@@ -96,13 +114,10 @@ const DispatcherStore = alt.createStore(class {
   setAlt(alt) {
     this.alt = alt
     this.recorder = new DispatcherRecorder(alt)
+    this.recorder.record()
     this.stores = Object.keys(this.alt.stores).map((name) => {
       return this.alt.stores[name]
     })
-  }
-
-  toggleLogDispatches() {
-    this.logDispatches = !this.logDispatches
   }
 
   toggleRecording() {
@@ -152,25 +167,6 @@ const DispatcherStore = alt.createStore(class {
   }
 })
 
-//const DispatcherStore = alt.createStore({
-//  displayName: 'DispatcherStore',
-//
-//  config: {
-//    getState: state => state
-//  },
-//
-//  state: [],
-//
-//  reduce(state, payload) {
-//    if (payload.actions === actions.addDispatch.id) {
-//    }
-//    const { data } = payload
-//    const id = Math.random().toString(16).substr(2, 7)
-//    data.id = id
-//    return [data].concat(state)
-//  }
-//})
-
 class FixedDataTableCSS extends Component {
   componentShouldUpdate() {
     return false
@@ -200,9 +196,12 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
     super()
 
     this.getDispatch = this.getDispatch.bind(this)
-    this.renderIcon = this.renderIcon.bind(this)
     this.renderRevert = this.renderRevert.bind(this)
     this.renderView = this.renderView.bind(this)
+  }
+
+  clear() {
+    actions.clear()
   }
 
   doLogDispatch(ev) {
@@ -223,8 +222,17 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
     }
   }
 
+  loadRecording() {
+    // XXX prompt or something...
+//    actions.loadRecording()
+  }
+
   revert(dispatch) {
     actions.revert(dispatch.id)
+  }
+
+  saveRecording() {
+    actions.saveRecording()
   }
 
   toggleLogDispatches() {
@@ -241,17 +249,6 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
     } else {
       console.log(dispatch)
     }
-  }
-
-  renderIcon(isRecorded, _, dispatch) {
-    return (
-      <input
-        checked={isRecorded}
-        data-payload-id={dispatch.id}
-        onChange={this.doLogDispatch}
-        type="checkbox"
-      />
-    )
   }
 
   renderName(action) {
@@ -287,34 +284,27 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
   }
 
   render() {
-    // XXX maybe all dispatches should be recorded...
-    // and maybe not because we may have unwanted things?
-    //
-    // is there a scenario where you don't want to replay ALL the dispatches only certain ones?
-    // makes sense...
-    // Stop recording should just stop logging all the dispatches...
-    //
-    // TODO make clear dispatches, make replay dispatches which will recycle state and replay
-    // make save + load
     return (
       <div>
-        <label>
-          <input
-            checked={this.props.logDispatches}
-            onChange={this.toggleLogDispatches}
-            type="checkbox"
-          />
-          <span>Log Dispatches</span>
-        </label>
         <div>
           <span onClick={this.toggleRecording}>
             {this.props.isRecording ? 'Stop' : 'Record'}
           </span>
+          {' | '}
           <span onClick={this.saveRecording}>
-            {this.props.hasRecorded && 'Save for Replay'}
+            {this.props.dispatches.length && 'Save'}
           </span>
+          {' | '}
+          <span onClick={this.clear}>
+            Clear
+          </span>
+          {' | '}
           <span onClick={this.loadRecording}>
             Load
+          </span>
+          {' | '}
+          <span onClick={this.replay}>
+            Replay Events
           </span>
         </div>
         <Table
@@ -326,28 +316,22 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
           width={320}
         >
           <Column
-            cellRenderer={this.renderIcon}
-            dataKey="recorded"
-            label="*"
-            width={25}
-          />
-          <Column
             cellRenderer={this.renderName}
             dataKey="details"
             label="Name"
-            width={155}
+            width={190}
           />
           <Column
             cellRenderer={this.renderView}
             dataKey="id"
             label="View"
-            width={70}
+            width={65}
           />
           <Column
             cellRenderer={this.renderRevert}
             dataKey=""
             label="Revert"
-            width={70}
+            width={65}
           />
         </Table>
       </div>
