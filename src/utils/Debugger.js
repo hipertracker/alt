@@ -8,6 +8,8 @@ import DispatcherRecorder from './DispatcherRecorder'
 import { DragSource, DragDropContext } from 'react-dnd'
 import HTML5Backend from 'react-dnd/modules/backends/HTML5'
 
+import assign from 'object-assign'
+
 //import DispatcherDebugger from './DispatcherDebugger'
 
 const alt = new Alt()
@@ -30,8 +32,10 @@ const DispatcherStore = alt.createStore(class {
       return {
         currentStateId: state.currentStateId,
         dispatches: state.dispatches,
+        hasRecorded: state.recorder && state.recorder.events.length > 0,
         isRecording: state.isRecording,
         logDispatches: state.logDispatches,
+        mtime: state.mtime,
         selectedDispatch: state.selectedDispatch,
       }
     }
@@ -48,13 +52,22 @@ const DispatcherStore = alt.createStore(class {
     this.isRecording = false
     this.logDispatches = true
 
+    // due to the aggressive nature of FixedDataTable's shouldComponentUpdate
+    // and JS objects being references not values we need an mtime applied
+    // to each dispatch so we know when data has changed
+    this.mtime = Date.now()
+
+    this.on('beforeEach', () => {
+      this.mtime = Date.now()
+    })
+
     this.bindActions(actions)
   }
 
   addDispatch(payload) {
     if (!this.logDispatches) return false
 
-    if (this.isRecording) payload.recorded = true
+    payload.recorded = this.isRecording
 
     const dispatchedStores = this.stores
       .filter((x) => x.boundListeners.indexOf(payload.details.id) > -1)
@@ -107,14 +120,9 @@ const DispatcherStore = alt.createStore(class {
       return dispatch.id === id ? i : x
     }, null)
 
-    if (!dispatchId) return false
+    if (dispatchId === null) return false
 
     const dispatch = this.dispatches[dispatchId]
-
-    this.dispatches[dispatchId].recorded = false
-
-    // XXX
-    return true
 
     if (dispatch.recorded) {
       // remove from the recorder
@@ -124,9 +132,20 @@ const DispatcherStore = alt.createStore(class {
 
       if (spliceId) this.recorder.events.splice(spliceId, 1)
     } else {
-      // add to the recorder, in the right order too
-      // TODO
-      this.recorder.events.push(dispatch)
+      // find the correct splice index so we can add it in proper replay order
+      let prevId = null
+      for (let i = dispatchId; i < this.dispatches.length; i += 1) {
+        if (this.dispatches[i].recorded) {
+          prevId = this.dispatches[i].id
+          break
+        }
+      }
+
+      const spliceId = this.recorder.events.reduce((splice, event, i) => {
+        return event.id === prevId ? i : splice
+      }, 0)
+
+      this.recorder.events.splice(spliceId, 0, dispatch)
     }
 
     dispatch.recorded = !dispatch.recorded
@@ -180,6 +199,7 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
   constructor() {
     super()
 
+    this.getDispatch = this.getDispatch.bind(this)
     this.renderIcon = this.renderIcon.bind(this)
     this.renderRevert = this.renderRevert.bind(this)
     this.renderView = this.renderView.bind(this)
@@ -188,6 +208,19 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
   doLogDispatch(ev) {
     const data = ev.target.dataset
     actions.toggleRecordDispatch(data.payloadId)
+  }
+
+  getDispatch(idx) {
+    const dispatch = this.props.dispatches[idx]
+    return {
+      id: dispatch.id,
+      action: dispatch.action,
+      data: dispatch.data,
+      details: dispatch.details,
+      recorded: dispatch.recorded,
+      dispatchedStores: dispatch.dispatchedStores,
+      mtime: this.props.mtime,
+    }
   }
 
   revert(dispatch) {
@@ -231,7 +264,10 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
         onClick={() => this.revert(dispatch)}
         style={{ cursor: 'pointer' }}
       >
-        Revert {this.props.currentStateId === dispatch.id ? '√' : ''}
+        Revert
+        <span dangerouslySetInnerHTML={{
+          __html: this.props.currentStateId === dispatch.id ? '&middot;' : ''
+        }} />
       </span>
     )
   }
@@ -242,12 +278,24 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
         onClick={() => this.view(dispatch)}
         style={{ cursor: 'pointer' }}
       >
-        View {this.props.selectedDispatch === dispatch ? '√' : ''}
+        View
+        <span dangerouslySetInnerHTML={{
+          __html: this.props.selectedDispatch.id === dispatch.id ? '&middot;' : ''
+        }} />
       </span>
     )
   }
 
   render() {
+    // XXX maybe all dispatches should be recorded...
+    // and maybe not because we may have unwanted things?
+    //
+    // is there a scenario where you don't want to replay ALL the dispatches only certain ones?
+    // makes sense...
+    // Stop recording should just stop logging all the dispatches...
+    //
+    // TODO make clear dispatches, make replay dispatches which will recycle state and replay
+    // make save + load
     return (
       <div>
         <label>
@@ -262,11 +310,17 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
           <span onClick={this.toggleRecording}>
             {this.props.isRecording ? 'Stop' : 'Record'}
           </span>
+          <span onClick={this.saveRecording}>
+            {this.props.hasRecorded && 'Save for Replay'}
+          </span>
+          <span onClick={this.loadRecording}>
+            Load
+          </span>
         </div>
         <Table
           headerHeight={30}
           height={480}
-          rowGetter={(idx) => this.props.dispatches[idx]}
+          rowGetter={this.getDispatch}
           rowHeight={30}
           rowsCount={this.props.dispatches.length}
           width={320}
