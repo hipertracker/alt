@@ -28,8 +28,6 @@ const actions = alt.generateActions(
 )
 
 const DispatcherStore = alt.createStore(class {
-  static displayName = 'DispatcherStore'
-
   static config = {
     getState(state) {
       return {
@@ -50,7 +48,9 @@ const DispatcherStore = alt.createStore(class {
     this.alt = null
     this.recorder = null
     this.stores = []
+    this.replayTime = 0
     this.isRecording = true
+    this.isReplaying = false
 
     // due to the aggressive nature of FixedDataTable's shouldComponentUpdate
     // and JS objects being references not values we need an mtime applied
@@ -99,6 +99,18 @@ const DispatcherStore = alt.createStore(class {
 
   replay() {
     this.clear()
+
+    // XXX I think I should make a new store that handles all the replaying stuff
+    // have a Pause replays | Stop replays.
+    // and a way to configure replays
+    // if replays are taking place you may want to stub the dispatcher so you can trap any dispatches
+    // that aren't part of the replay
+    // and then you may want to unleash them afterwards? (console.warn that some dispatches were trapped)
+    this.isReplaying = true
+
+    setTimeout(() => {
+
+    }, this.replayTime)
 
     // XXX I need to be able to pause and stop replay and shit...
     setTimeout(() => this.recorder.replay(5))
@@ -174,7 +186,7 @@ const DispatcherStore = alt.createStore(class {
 
     dispatch.recorded = !dispatch.recorded
   }
-})
+}, 'DispatcherStore')
 
 class FixedDataTableCSS extends Component {
   componentShouldUpdate() {
@@ -213,11 +225,6 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
     actions.clear()
   }
 
-  doLogDispatch(ev) {
-    const data = ev.target.dataset
-    actions.toggleRecordDispatch(data.payloadId)
-  }
-
   getDispatch(idx) {
     const dispatch = this.props.dispatches[idx]
     return {
@@ -237,7 +244,9 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
   }
 
   revert(ev) {
+    console.log('click')
     const data = ev.target.dataset
+    console.log(ev.target, data)
     actions.revert(data.dispatchId)
   }
 
@@ -254,7 +263,9 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
   }
 
   view(ev) {
+    console.log('clickety')
     const data = ev.target.dataset
+    console.log(ev.target, data)
     const dispatch = this.props.dispatches[data.dispatchId]
     if (this.props.inspector) {
       actions.selectDispatch(dispatch)
@@ -278,7 +289,7 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
   renderRevert(a, b, dispatch) {
     return (
       <span
-        data-dispatch-id={dispatch.id}
+        data-dispatch={dispatch.id}
         onClick={this.revert}
         style={{ cursor: 'pointer' }}
       >
