@@ -68,7 +68,7 @@ const DispatcherStore = alt.createStore(class {
     if (!this.isRecording) return false
 
     const dispatchedStores = this.stores
-      .filter((x) => x.boundListeners.indexOf(payload.details.id) > -1)
+      .filter((x) => x.boundListeners.indexOf(payload.action) > -1)
       .map((x) => x.name)
       .join(', ')
 
@@ -86,6 +86,15 @@ const DispatcherStore = alt.createStore(class {
     this.currentStateId = null
     this.snapshots = {}
     this.recorder.clear()
+  }
+
+  loadRecording(events) {
+    this.clear()
+    const wasRecording = this.isRecording
+    this.isRecording = true
+    const dispatches = this.recorder.loadEvents(events)
+    dispatches.forEach((dispatch) => this.addDispatch(dispatch))
+    this.isRecording = wasRecording
   }
 
   replay() {
@@ -197,7 +206,7 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
 
     this.getDispatch = this.getDispatch.bind(this)
     this.renderRevert = this.renderRevert.bind(this)
-    this.renderView = this.renderView.bind(this)
+    this.view = this.view.bind(this)
   }
 
   clear() {
@@ -223,12 +232,13 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
   }
 
   loadRecording() {
-    // XXX prompt or something...
-//    actions.loadRecording()
+    const json = prompt('Give me a serialized recording')
+    if (json) actions.loadRecording(json)
   }
 
-  revert(dispatch) {
-    actions.revert(dispatch.id)
+  revert(ev) {
+    const data = ev.target.dataset
+    actions.revert(data.dispatchId)
   }
 
   saveRecording() {
@@ -243,7 +253,9 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
     actions.toggleRecording()
   }
 
-  view(dispatch) {
+  view(ev) {
+    const data = ev.target.dataset
+    const dispatch = this.props.dispatches[data.dispatchId]
     if (this.props.inspector) {
       actions.selectDispatch(dispatch)
     } else {
@@ -251,33 +263,28 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
     }
   }
 
-  renderName(action) {
-    return <span>{action.name}</span>
+  renderName(name, _, dispatch) {
+    return (
+      <span
+        data-dispatch-id={dispatch.id}
+        onClick={this.view}
+        style={{ cursor: 'pointer' }}
+      >
+        {name}
+      </span>
+    )
   }
 
   renderRevert(a, b, dispatch) {
     return (
       <span
-        onClick={() => this.revert(dispatch)}
+        data-dispatch-id={dispatch.id}
+        onClick={this.revert}
         style={{ cursor: 'pointer' }}
       >
         Revert
         <span dangerouslySetInnerHTML={{
-          __html: this.props.currentStateId === dispatch.id ? '&middot;' : ''
-        }} />
-      </span>
-    )
-  }
-
-  renderView(a, b, dispatch) {
-    return (
-      <span
-        onClick={() => this.view(dispatch)}
-        style={{ cursor: 'pointer' }}
-      >
-        View
-        <span dangerouslySetInnerHTML={{
-          __html: this.props.selectedDispatch.id === dispatch.id ? '&middot;' : ''
+          __html: this.props.currentStateId === dispatch.id ? '&#10003;' : ''
         }} />
       </span>
     )
@@ -292,7 +299,7 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
           </span>
           {' | '}
           <span onClick={this.saveRecording}>
-            {this.props.dispatches.length && 'Save'}
+            {this.props.dispatches.length ? 'Save' : ''}
           </span>
           {' | '}
           <span onClick={this.clear}>
@@ -317,21 +324,15 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
         >
           <Column
             cellRenderer={this.renderName}
-            dataKey="details"
+            dataKey="action"
             label="Name"
-            width={190}
-          />
-          <Column
-            cellRenderer={this.renderView}
-            dataKey="id"
-            label="View"
-            width={65}
+            width={250}
           />
           <Column
             cellRenderer={this.renderRevert}
             dataKey=""
             label="Revert"
-            width={65}
+            width={70}
           />
         </Table>
       </div>
@@ -343,11 +344,6 @@ const DispatcherDebugger = DragSource('DispatcherDebugger', {
 // we can also have a StoreDebugger
 // we can also have a DebuggingTools which has flush, bootstrap, etc
 // and a main Debugger which gives us access to everything
-//
-//
-//  XXX add ability to turn off snapshots/history/revert
-//  add ability to record dispatches
-//  add ability to turn off dispatch logging
 class Debugger extends Component {
   componentDidMount() {
     const finalStore = makeFinalStore(this.props.alt)
